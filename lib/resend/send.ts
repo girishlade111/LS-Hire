@@ -1,4 +1,4 @@
-import { resend } from "./client";
+import { getResend } from "./client";
 import { withRetry } from "../retry";
 
 type SendResendReplyParams = {
@@ -11,6 +11,7 @@ type SendResendReplyParams = {
 export async function sendResendReply(
   params: SendResendReplyParams
 ): Promise<void> {
+  const resend = getResend();
   const response = await withRetry(
     () =>
       resend.emails.send({

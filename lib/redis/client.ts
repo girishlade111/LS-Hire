@@ -8,7 +8,19 @@ export function requireEnv(name: string): string {
   return value;
 }
 
-export const redis = new Redis({
-  url: requireEnv("UPSTASH_REDIS_REST_URL"),
-  token: requireEnv("UPSTASH_REDIS_REST_TOKEN")
-});
+let instance: Redis | null = null;
+
+/**
+ * Lazy singleton — the Upstash client is built on first use instead of at
+ * import time, so importing this module never requires env vars to be set
+ * (keeps `next build` page-data collection working without credentials).
+ */
+export function getRedis(): Redis {
+  if (!instance) {
+    instance = new Redis({
+      url: requireEnv("UPSTASH_REDIS_REST_URL"),
+      token: requireEnv("UPSTASH_REDIS_REST_TOKEN")
+    });
+  }
+  return instance;
+}

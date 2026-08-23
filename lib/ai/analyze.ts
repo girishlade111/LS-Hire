@@ -1,4 +1,4 @@
-import { openai } from "./client";
+import { getOpenAI } from "./client";
 import type { JobApplicationAnalysis } from "./types";
 import { withRetry } from "../retry";
 
@@ -68,6 +68,7 @@ function buildSystemPrompt(
 export async function analyzeJobApplication(
   params: AnalyzeJobApplicationParams
 ): Promise<JobApplicationAnalysis> {
+  const openai = getOpenAI();
   const userMessage = `<untrusted_email>\n<subject>${params.subject}</subject>\n<body>\n${params.bodyText}\n</body>\n</untrusted_email>`;
 
   const response = await withRetry(

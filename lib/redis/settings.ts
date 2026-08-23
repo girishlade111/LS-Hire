@@ -1,4 +1,4 @@
-import { redis } from "./client";
+import { getRedis } from "./client";
 
 export type ReplyMethod = "gmail" | "resend";
 
@@ -40,7 +40,7 @@ function normalize(raw: Record<string, string> | null): UserSettings {
 }
 
 export async function getUserSettings(userId: string): Promise<UserSettings> {
-  const data = await redis.hgetall<Record<string, string>>(
+  const data = await getRedis().hgetall<Record<string, string>>(
     `${SETTINGS_KEY_PREFIX}${userId}`
   );
   return normalize(data);
@@ -52,6 +52,17 @@ export async function saveUserSettings(
 ): Promise<UserSettings> {
   const current = await getUserSettings(userId);
   const merged: UserSettings = { ...current, ...partial };
-  await redis.hset(`${SETTINGS_KEY_PREFIX}${userId}`, merged);
+
+  const stored: Record<string, string> = {
+    replyMethod: merged.replyMethod,
+    jobLabelName: merged.jobLabelName,
+    processedLabelName: merged.processedLabelName,
+    hrPersonaPrompt: merged.hrPersonaPrompt
+  };
+  if (merged.resendFromEmail) {
+    stored.resendFromEmail = merged.resendFromEmail;
+  }
+
+  await getRedis().hset(`${SETTINGS_KEY_PREFIX}${userId}`, stored);
   return merged;
 }

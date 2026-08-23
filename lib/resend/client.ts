@@ -8,4 +8,12 @@ function requireEnv(name: string): string {
   return value;
 }
 
-export const resend = new Resend(requireEnv("RESEND_API_KEY"));
+let instance: Resend | null = null;
+
+/** Lazy singleton — env validated on first use, not at import (build-safe). */
+export function getResend(): Resend {
+  if (!instance) {
+    instance = new Resend(requireEnv("RESEND_API_KEY"));
+  }
+  return instance;
+}

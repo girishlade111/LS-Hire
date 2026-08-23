@@ -1,12 +1,13 @@
 import { google } from "googleapis";
 
+// gmail.modify is the real Google scope that covers reading, label changes
+// (users.messages.modify) and sending. There is no "gmail.labels" scope in
+// the Gmail API — requesting it would silently drop label permission.
 export const GMAIL_SCOPES: string[] = [
   "openid",
   "email",
   "profile",
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.labels",
-  "https://www.googleapis.com/auth/gmail.send"
+  "https://www.googleapis.com/auth/gmail.modify"
 ];
 
 function requireEnv(name: string): string {

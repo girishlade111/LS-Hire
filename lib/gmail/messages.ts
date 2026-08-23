@@ -7,7 +7,10 @@ type MessagePart = gmail_v1.Schema$MessagePart;
 
 function findDecodedText(part: MessagePart, mimeType: string): string | null {
   if (part.mimeType === mimeType && part.body?.data) {
-    return Buffer.from(part.body.data, "base64").toString("utf-8");
+    // Gmail returns base64url-encoded bodies; normalize to standard base64
+    // before decoding so "-"/"_" characters are not silently dropped.
+    const normalized = part.body.data.replace(/-/g, "+").replace(/_/g, "/");
+    return Buffer.from(normalized, "base64").toString("utf-8");
   }
   for (const child of part.parts ?? []) {
     const found = findDecodedText(child, mimeType);
