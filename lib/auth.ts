@@ -1,19 +1,7 @@
 import GoogleProvider from "next-auth/providers/google";
-import type { DefaultSession, NextAuthOptions } from "next-auth";
+import type { NextAuthOptions } from "next-auth";
 import { GMAIL_SCOPES } from "./gmail/client";
 import { saveUserToken } from "./redis/tokens";
-
-declare module "next-auth" {
-  interface Session {
-    user?: DefaultSession["user"] & { id: string };
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    userId?: string;
-  }
-}
 
 export const authOptions: NextAuthOptions = {
   providers: [
