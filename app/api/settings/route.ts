@@ -54,7 +54,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+async function handleUpdate(request: Request) {
   try {
     const userId = await getSessionUserId();
     if (!userId) {
@@ -91,7 +91,9 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ success: true, data: updatedSettings });
   } catch (error) {
-    console.error("[api/settings][POST] failed:", error);
+    console.error("[api/settings][update] failed:", error);
     return internalErrorResponse();
   }
 }
+
+export { handleUpdate as POST, handleUpdate as PATCH };
