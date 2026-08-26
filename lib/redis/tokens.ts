@@ -1,3 +1,4 @@
+import { decryptSecret, encryptSecret } from "../security";
 import { getRedis } from "./client";
 
 export interface StoredUser {
@@ -12,7 +13,8 @@ const ACTIVE_USERS_SET = "users:active";
 export async function saveUserToken(user: StoredUser): Promise<void> {
   await getRedis().hset(`${USER_KEY_PREFIX}${user.userId}`, {
     email: user.email,
-    refreshToken: user.refreshToken
+    // Refresh tokens grant full Gmail access — always store encrypted.
+    refreshToken: encryptSecret(user.refreshToken)
   });
   await getRedis().sadd(ACTIVE_USERS_SET, user.userId);
 }
@@ -24,10 +26,22 @@ export async function getUserToken(userId: string): Promise<StoredUser | null> {
   if (!data || !data.refreshToken) {
     return null;
   }
+
+  let refreshToken: string;
+  try {
+    refreshToken = decryptSecret(data.refreshToken);
+  } catch (error) {
+    console.error(
+      `[redis/tokens] stored token for user ${userId} is unreadable (wrong key or tampered); treating as missing:`,
+      error
+    );
+    return null;
+  }
+
   return {
     userId,
     email: data.email ?? "",
-    refreshToken: data.refreshToken
+    refreshToken
   };
 }
 

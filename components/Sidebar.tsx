@@ -28,7 +28,7 @@ export function Sidebar() {
         <div className="text-h1 text-text">Hire</div>
         <div className="text-eyebrow text-text-faint">by Lade Stack</div>
       </div>
-      <nav className="flex-1 px-2 py-3">
+      <nav aria-label="Dashboard navigation" className="flex-1 px-2 py-3">
         {links.map((link) => (
           <Link
             key={link.href}

@@ -13,6 +13,7 @@ export default function ReplyMethodPage() {
   const [replyMethod, setReplyMethod] = useState<ReplyMethod>("gmail");
   const [resendFromEmail, setResendFromEmail] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<{
     ok: boolean;
     message: string;
@@ -45,6 +46,7 @@ export default function ReplyMethodPage() {
 
   async function handleSave() {
     setSaveState(null);
+    setSaving(true);
     try {
       const response = await fetch("/api/settings", {
         method: "PATCH",
@@ -65,6 +67,8 @@ export default function ReplyMethodPage() {
       }
     } catch {
       setSaveState({ ok: false, message: "Network error. Try again." });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -110,8 +114,12 @@ export default function ReplyMethodPage() {
                 {saveState.message}
               </span>
             ) : null}
-            <Button variant="accent" onClick={handleSave} disabled={loading}>
-              Save changes
+            <Button
+              variant="accent"
+              onClick={handleSave}
+              disabled={loading || saving}
+            >
+              {saving ? "Saving..." : "Save changes"}
             </Button>
           </div>
         </Card>

@@ -1,5 +1,9 @@
 import { getOpenAI } from "./client";
-import type { JobApplicationAnalysis } from "./types";
+import {
+  jobApplicationAnalysisSchema,
+  type JobApplicationAnalysis
+} from "./types";
+import { parseEmailAddress } from "../validation";
 import { withRetry } from "../retry";
 
 type AnalyzeJobApplicationParams = {
@@ -10,6 +14,59 @@ type AnalyzeJobApplicationParams = {
 };
 
 const MODEL = "gpt-4o";
+
+/** Cap on untrusted email content sent to the model — bounds cost and context. */
+const MAX_SUBJECT_LENGTH = 500;
+const MAX_BODY_LENGTH = 24_000;
+
+/**
+ * Neutralizes attempts to break out of the <untrusted_email> wrapper by
+ * mangling the tag delimiters inside untrusted content.
+ */
+export function sanitizeUntrustedContent(content: string): string {
+  return content
+    .replace(/<\s*\/?\s*untrusted_email[^>]*>/gi, "[untrusted_email]")
+    .replace(/\[\s*\/?\s*untrusted_email[^\]]*\]/gi, "[untrusted_email]");
+}
+
+/**
+ * Validates and narrows a raw model response (JSON string or object) into a
+ * JobApplicationAnalysis. An invalid candidate email is nulled rather than
+ * trusted so downstream code treats it as "not found". Exported for testing.
+ */
+export function normalizeAnalysis(raw: unknown): JobApplicationAnalysis {
+  let parsedJson: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsedJson = JSON.parse(raw);
+    } catch {
+      throw new Error(
+        "OpenAI returned malformed JSON for job application analysis"
+      );
+    }
+  }
+
+  const result = jobApplicationAnalysisSchema.safeParse(parsedJson);
+  if (!result.success) {
+    throw new Error(
+      `OpenAI response failed schema validation: ${result.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; ")}`
+    );
+  }
+
+  const analysis = result.data;
+  if (
+    analysis.candidateEmail &&
+    !parseEmailAddress(analysis.candidateEmail)
+  ) {
+    analysis.candidateEmail = null;
+  }
+  if (analysis.candidateName && analysis.candidateName.trim() === "") {
+    analysis.candidateName = null;
+  }
+  return analysis;
+}
 
 const analysisJsonSchema = {
   name: "job_application_analysis",
@@ -34,7 +91,7 @@ const analysisJsonSchema = {
     ],
     additionalProperties: false
   }
-};
+} as const;
 
 function buildSystemPrompt(
   companyName: string,
@@ -69,7 +126,9 @@ export async function analyzeJobApplication(
   params: AnalyzeJobApplicationParams
 ): Promise<JobApplicationAnalysis> {
   const openai = getOpenAI();
-  const userMessage = `<untrusted_email>\n<subject>${params.subject}</subject>\n<body>\n${params.bodyText}\n</body>\n</untrusted_email>`;
+  // Untrusted content is truncated AND sanitized before being wrapped in the
+  // untrusted_email envelope (defense in depth against prompt injection).
+  const userMessage = `<untrusted_email>\n<subject>${sanitizeUntrustedContent(params.subject.slice(0, MAX_SUBJECT_LENGTH))}</subject>\n<body>\n${sanitizeUntrustedContent(params.bodyText.slice(0, MAX_BODY_LENGTH))}\n</body>\n</untrusted_email>`;
 
   const response = await withRetry(
     () =>
@@ -79,6 +138,8 @@ export async function analyzeJobApplication(
           { role: "system", content: buildSystemPrompt(params.companyName, params.hrPersonaPrompt) },
           { role: "user", content: userMessage }
         ],
+        max_tokens: 1024,
+        temperature: 0.3,
         response_format: {
           type: "json_schema",
           json_schema: analysisJsonSchema
@@ -92,5 +153,5 @@ export async function analyzeJobApplication(
     throw new Error("OpenAI returned an empty response for job application analysis");
   }
 
-  return JSON.parse(content) as JobApplicationAnalysis;
+  return normalizeAnalysis(content);
 }

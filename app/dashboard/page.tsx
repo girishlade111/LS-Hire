@@ -7,8 +7,10 @@ import { Badge } from "@/components/Primitives";
 import { authOptions } from "@/lib/auth";
 import { getUserSettings } from "@/lib/redis/settings";
 import { getUserToken } from "@/lib/redis/tokens";
-import { listUnprocessedApplications } from "@/lib/gmail/messages";
-import { getGmailClientForUser } from "@/lib/gmail/client";
+import {
+  listProcessedApplications,
+  listUnprocessedApplications
+} from "@/lib/gmail/messages";
 
 type ApplicationRow = {
   id: string;
@@ -16,57 +18,6 @@ type ApplicationRow = {
   description: string;
   pending: boolean;
 };
-
-function headerValue(
-  headers: Array<{ name?: string | null; value?: string | null }>,
-  name: string
-): string {
-  const match = headers.find(
-    (header) => header.name?.toLowerCase() === name.toLowerCase()
-  );
-  return match?.value ?? "";
-}
-
-async function fetchProcessedRows(
-  refreshToken: string,
-  processedLabelName: string
-): Promise<ApplicationRow[]> {
-  const gmail = getGmailClientForUser(refreshToken);
-
-  const listResponse = await gmail.users.messages.list({
-    userId: "me",
-    q: `label:${processedLabelName}`,
-    maxResults: 20
-  });
-
-  const rows: ApplicationRow[] = [];
-
-  for (const item of listResponse.data.messages ?? []) {
-    const id = item.id;
-    if (!id) {
-      continue;
-    }
-    try {
-      const response = await gmail.users.messages.get({
-        userId: "me",
-        id,
-        format: "metadata",
-        metadataHeaders: ["Subject", "From"]
-      });
-      const headers = response.data.payload?.headers ?? [];
-      rows.push({
-        id,
-        title: headerValue(headers, "Subject") || "(no subject)",
-        description: headerValue(headers, "From") || "unknown sender",
-        pending: false
-      });
-    } catch (error) {
-      console.error(`[dashboard] failed to fetch message ${id}:`, error);
-    }
-  }
-
-  return rows;
-}
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -104,10 +55,16 @@ export default async function DashboardPage() {
     }
 
     try {
-      repliedRows = await fetchProcessedRows(
+      const processed = await listProcessedApplications(
         token.refreshToken,
         settings.processedLabelName
       );
+      repliedRows = processed.map((row) => ({
+        id: row.id,
+        title: row.subject,
+        description: row.from,
+        pending: false
+      }));
     } catch (error) {
       console.error("[dashboard] failed to list processed applications:", error);
     }

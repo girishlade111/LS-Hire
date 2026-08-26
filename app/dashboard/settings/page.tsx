@@ -23,6 +23,7 @@ export default function SettingsPage() {
     hrPersonaPrompt: ""
   });
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<{
     ok: boolean;
     message: string;
@@ -58,6 +59,7 @@ export default function SettingsPage() {
 
   async function handleSave() {
     setSaveState(null);
+    setSaving(true);
     try {
       const response = await fetch("/api/settings", {
         method: "PATCH",
@@ -75,6 +77,8 @@ export default function SettingsPage() {
       }
     } catch {
       setSaveState({ ok: false, message: "Network error. Try again." });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -131,8 +135,12 @@ export default function SettingsPage() {
                 {saveState.message}
               </span>
             ) : null}
-            <Button variant="accent" onClick={handleSave} disabled={loading}>
-              Save changes
+            <Button
+              variant="accent"
+              onClick={handleSave}
+              disabled={loading || saving}
+            >
+              {saving ? "Saving..." : "Save changes"}
             </Button>
           </div>
         </Card>

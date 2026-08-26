@@ -24,7 +24,8 @@ function isReplyMethod(value: unknown): value is ReplyMethod {
   return value === "gmail" || value === "resend";
 }
 
-function normalize(raw: Record<string, string> | null): UserSettings {
+/** Merges raw stored data over defaults. Exported for testing. */
+export function normalize(raw: Record<string, string> | null): UserSettings {
   if (!raw) {
     return { ...DEFAULTS };
   }

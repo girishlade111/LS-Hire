@@ -7,14 +7,31 @@ import {
   saveUserSettings,
   type UserSettings
 } from "@/lib/redis/settings";
+import {
+  isValidGmailLabelName,
+  parseEmailAddress
+} from "@/lib/validation";
+
+const MAX_PROMPT_LENGTH = 4_000;
+
+// Label names end up inside Gmail search queries — restrict to safe values.
+const gmailLabelSchema = z.string().refine(isValidGmailLabelName, {
+  message:
+    "must be 1-100 characters with no quotes, backslashes, newlines, or leading/trailing spaces"
+});
 
 const settingsUpdateSchema = z
   .object({
     replyMethod: z.enum(["gmail", "resend"]).optional(),
-    jobLabelName: z.string().optional(),
-    processedLabelName: z.string().optional(),
-    hrPersonaPrompt: z.string().optional(),
-    resendFromEmail: z.string().optional()
+    jobLabelName: gmailLabelSchema.optional(),
+    processedLabelName: gmailLabelSchema.optional(),
+    hrPersonaPrompt: z.string().max(MAX_PROMPT_LENGTH).optional(),
+    resendFromEmail: z
+      .string()
+      .refine((value) => parseEmailAddress(value) !== null, {
+        message: "must be a valid email address"
+      })
+      .optional()
   })
   .strict();
 

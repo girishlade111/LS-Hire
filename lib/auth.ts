@@ -23,11 +23,21 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       if (account?.refresh_token) {
-        await saveUserToken({
-          userId: user.id || account.providerAccountId,
-          email: user.email ?? "",
-          refreshToken: account.refresh_token
-        });
+        try {
+          await saveUserToken({
+            userId: user.id || account.providerAccountId,
+            email: user.email ?? "",
+            refreshToken: account.refresh_token
+          });
+        } catch (error) {
+          // A Redis outage must not brick sign-in entirely — the token is
+          // re-issued on the next consent flow thanks to prompt: "consent".
+          console.error(
+            "[auth] failed to persist refresh token for user:",
+            user.id,
+            error
+          );
+        }
       }
       return true;
     },

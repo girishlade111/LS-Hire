@@ -2,59 +2,14 @@ import type { gmail_v1 } from "googleapis";
 import { getGmailClientForUser } from "./client";
 import type { ParsedGmailMessage } from "./types";
 import { withRetry } from "../retry";
+import { gmailLabelQueryTerm } from "../validation";
+import {
+  extractBody,
+  getHeader,
+  hasAttachmentDeep
+} from "./body";
 
 type MessagePart = gmail_v1.Schema$MessagePart;
-
-function findDecodedText(part: MessagePart, mimeType: string): string | null {
-  if (part.mimeType === mimeType && part.body?.data) {
-    // Gmail returns base64url-encoded bodies; normalize to standard base64
-    // before decoding so "-"/"_" characters are not silently dropped.
-    const normalized = part.body.data.replace(/-/g, "+").replace(/_/g, "/");
-    return Buffer.from(normalized, "base64").toString("utf-8");
-  }
-  for (const child of part.parts ?? []) {
-    const found = findDecodedText(child, mimeType);
-    if (found !== null) {
-      return found;
-    }
-  }
-  return null;
-}
-
-function hasAttachmentDeep(part: MessagePart): boolean {
-  if (part.filename && part.body?.attachmentId) {
-    return true;
-  }
-  return (part.parts ?? []).some((child) => hasAttachmentDeep(child));
-}
-
-function stripHtmlTags(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .trim();
-}
-
-function extractBody(payload: MessagePart): string {
-  const plain = findDecodedText(payload, "text/plain");
-  if (plain !== null) {
-    return plain;
-  }
-  const html = findDecodedText(payload, "text/html");
-  if (html !== null) {
-    return stripHtmlTags(html);
-  }
-  return "";
-}
-
-function getHeader(payload: MessagePart, name: string): string {
-  const header = (payload.headers ?? []).find(
-    (h) => h.name?.toLowerCase() === name.toLowerCase()
-  );
-  return header?.value ?? "";
-}
 
 /**
  * Lists unprocessed application emails for one user.
@@ -67,7 +22,8 @@ export async function listUnprocessedApplications(
   processedLabelName: string
 ): Promise<ParsedGmailMessage[]> {
   const gmail = getGmailClientForUser(refreshToken);
-  const query = `label:${jobLabelName} -label:${processedLabelName}`;
+  // Label names are user-configured; quoting prevents query injection.
+  const query = `${gmailLabelQueryTerm(jobLabelName)} -${gmailLabelQueryTerm(processedLabelName)}`;
 
   const listResponse = await withRetry(
     () =>
@@ -103,17 +59,80 @@ export async function listUnprocessedApplications(
     );
 
     const message = response.data;
-    const payload = message.payload ?? {};
+    const payload: MessagePart = message.payload ?? {};
 
     parsed.push({
       id,
       threadId: message.threadId ?? "",
       subject: getHeader(payload, "Subject"),
       fromHeader: getHeader(payload, "From"),
+      rfcMessageId: getHeader(payload, "Message-ID"),
       bodyText: extractBody(payload),
       hasAttachment: hasAttachmentDeep(payload)
     });
   }
 
   return parsed;
+}
+
+export interface ProcessedApplicationRow {
+  id: string;
+  subject: string;
+  from: string;
+}
+
+/**
+ * Lists recently processed (auto-replied) application emails using a cheap
+ * metadata-only fetch. Used by the dashboard.
+ */
+export async function listProcessedApplications(
+  refreshToken: string,
+  processedLabelName: string,
+  maxResults = 20
+): Promise<ProcessedApplicationRow[]> {
+  const gmail = getGmailClientForUser(refreshToken);
+
+  const listResponse = await withRetry(
+    () =>
+      gmail.users.messages.list({
+        userId: "me",
+        q: gmailLabelQueryTerm(processedLabelName),
+        maxResults
+      }),
+    { label: "gmail.list" }
+  );
+
+  const rows: ProcessedApplicationRow[] = [];
+
+  for (const item of listResponse.data.messages ?? []) {
+    const id = item.id;
+    if (!id) {
+      continue;
+    }
+    try {
+      const response = await withRetry(
+        () =>
+          gmail.users.messages.get({
+            userId: "me",
+            id,
+            format: "metadata",
+            metadataHeaders: ["Subject", "From"]
+          }),
+        { label: "gmail.get" }
+      );
+      const headers = response.data.payload?.headers ?? [];
+      const headerValue = (name: string) =>
+        headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())
+          ?.value ?? "";
+      rows.push({
+        id,
+        subject: headerValue("Subject") || "(no subject)",
+        from: headerValue("From") || "unknown sender"
+      });
+    } catch (error) {
+      console.error(`[gmail/messages] failed to fetch message ${id}:`, error);
+    }
+  }
+
+  return rows;
 }
